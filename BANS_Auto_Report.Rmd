@@ -156,6 +156,7 @@ AvgBurByArea_long <- AvgBurByArea %>%
   pivot_longer(cols = everything(), names_to = "Area", values_to = "AvgBurs") %>% 
   separate(Area, into = c("Avg", "Area"), sep = "_") %>% 
   select(Area,AvgBurs)
+
 #Arrange Areas from most to least Annual Average
 HighestAvgBurs <-AvgBurByArea_long %>%
   arrange(desc(AvgBurs)) %>% 
@@ -164,7 +165,27 @@ HighestAvgBurs_Area <- HighestAvgBurs[[1]]
 HighestAvgBurs_Count <- HighestAvgBurs[[2]]
 
 ##Find Area with max burrow count
-currentYr_MaxByArea <-
+#Creates a single record table of Annual Avg Burrows per sector
+currentYr_MaxByArea <- currentYr_BT %>% 
+  select(contains("Area")) %>% 
+  summarise_all(~ max(.x, na.rm = T))
+
+#Tidy the df by turning into long format and fix Area Names
+currentYr_MaxByArea_long <- currentYr_MaxByArea %>%             
+  pivot_longer(cols = everything(), names_to = "Area", values_to = "MaxBurs") %>% 
+  separate(Area, into = c("Avg", "Area"), sep = "_") %>% 
+  select(Area,MaxBurs)
+
+#Arrange Areas from most to least Annual Average
+HighestMaxBurs <-currentYr_MaxByArea_long %>%
+  arrange(desc(MaxBurs)) %>% 
+  slice(1)
+HighestMaxBurs_Area <- HighestMaxBurs[[1]] %>% 
+  gsub(HighestMaxBurs, pattern = "(.{4})(.*)", replacement = "\\1 \\2")
+HighestMaxBurs_Count <- HighestMaxBurs[[2]]
+if(HighestMaxBurs_Area == "Area PB"){
+  HighestMaxBurs_Area <- 'the Phillip Burton Area'
+}
 
 ###################### BURROW ACTIVITY (BA) SURVEYS ######################
 
@@ -222,7 +243,7 @@ PercentActBur <- (AreaMostActBur_Quantity / HighestAvgBurs_Count)*100
 
 ```
 ## Abstract
-The Fort Funston breeding colony of bank swallows has been observed since the early 1900’s. Habitat loss and other factors led to bank swallows being listed as a threatened species under the California Endangered Species Act in 1989. The Fort Funston breeding colony of bank swallows may be one of only two remaining coastal breeding sites in California. Since 2020, the bank swallow colony has shifted locations along 's bluffs over the years, with bank swallows mainly nesting at Phillip Burton Memorial Beach which is just south of the Golden Gate National Recreation Area boundary. The total number of bank swallow burrows at the Fort Funston colony has been declining since 2000. In `r TargetYr`, there were a max of bank swallow burrows counted at the Phillip Burton Area, which is consistent, though slightly lower than burrow numbers in that area since 2019. Seventeen burrows were determined to be active in the Phillip Burton Area, and one burrow was active in Area B above the rock revetment at the north end of Fort Funston. In addition to monitoring in 2023, we tested drilling burrows, removing ice plant from accessible sections of bluff face, and placed temporary signage to try to keep people from disturbing active nesting areas.
+The Fort Funston breeding colony of bank swallows has been observed since the early 1900’s. Habitat loss and other factors led to bank swallows being listed as a threatened species under the California Endangered Species Act in 1989. The Fort Funston breeding colony of bank swallows may be one of only two remaining coastal breeding sites in California. Since 2020, the bank swallow colony has shifted locations along 's bluffs over the years, with bank swallows mainly nesting at Phillip Burton Memorial Beach which is just south of the Golden Gate National Recreation Area boundary. The total number of bank swallow burrows at the Fort Funston colony has been declining since 2000. In `r TargetYr`, there were a max of `r HighestMaxBurs_Count` bank swallow burrows counted at `r HighestMaxBurs_Area`, **!!Following sentence may not be applicable every year!!** which is consistent, though slightly lower than burrow numbers in that area since 2019. Seventeen burrows were determined to be active in the Phillip Burton Area, and one burrow was active in Area B above the rock revetment at the north end of Fort Funston. In addition to monitoring in 2023, we tested drilling burrows, removing ice plant from accessible sections of bluff face, and placed temporary signage to try to keep people from disturbing active nesting areas.
 
 ## Introduction
 The bank swallow (Riparia riparia) was listed as a threatened species under the California Endangered Species Act in 1989, after the species was extirpated from southern California and much of central California. The bank swallow range in California may have been reduced by as much as 50% (Zeiner et al. 1988). Habitat loss at breeding colony sites may continue to impact the species throughout the state. Fort Funston and Ano Nuevo State Park 65 km to the south are likely the only two extant coastal bank swallow breeding colonies remaining in California. Bank swallows have been known to nest in the bluffs at Fort Funston since at least the early 1900’s (Laymon et al. 1987).
@@ -244,6 +265,7 @@ low-flying aircrafts, etc. Surveys occur every 7-10 days throughout the nesting 
 ***Burrow activity surveys***
 
 Beginning in 2022, we did more intensive monitoring of the primary cluster of bank swallow nesting burrows to determine use. In `r TargetYr``, we continued nest monitoring surveys. These surveys focused on the areas with the most burrows and activity. Early season burrow transect surveys provide an indication on where to focus nest monitoring surveys. Once an area was selected, photos were taken of the area and then printed and laminated. These photos were used as a map to keep track of burrow identification. Surveys involved trained staff sitting in front of the focal burrow areas for one hour and recording bank swallow activity at a particular burrow and the time. Signs of active burrow nests were recorded as adults flying in/out of burrows, carrying fecal sacs, carrying food, carrying nesting material, or presence and number of nestlings if observed. Nest monitoring surveys occurred every 7-10 days during the nesting period and sometimes were done following burrow transect surveys. **!!Following sentences may not be applicable every year!!** Surveys continued throughout the nesting period until no activity at the burrows was observed. Once bank swallow activity at Fort Funston ceased, we used a borescope to examine eight of the burrows which had been used by an active nesting pair.
+
 ## Results
 
 In `r TargetYr` we conducted `r numBT_Surveys` burrow count surveys from `r startBT` to `r endBT` and `r numBA_Surveys` burrow activity surveys from `r startBA` to `r endBA`.
