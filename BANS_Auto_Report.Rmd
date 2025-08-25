@@ -77,13 +77,13 @@ BT_Surveys$Date <- as.Date(BT_Surveys$Date)
 BT_Surveys <- BT_Surveys %>% 
   mutate(TotBur = rowSums(select(., contains("area")), na.rm = T))
 
-##Max Burrows
+##Max Burrows##
 #Max Burrows across all areas per year
 maxBurSummary <- BT_Surveys %>% 
   group_by(Year) %>% 
   summarise(
     across(starts_with("Av"), max, na.rm = TRUE),  # Max for all Area columns
-    Max_Site_Total = max(TotBur, na.rm = TRUE))    # Max for TotBur column
+    Total_of_Avgs = max(TotBur, na.rm = TRUE))    # Max for TotBur column
 
 #Tidy data to long format for plotting
 maxBurSummary_long <- maxBurSummary %>% 
@@ -92,12 +92,17 @@ maxBurSummary_long <- maxBurSummary %>%
                values_to = "Max_Count") %>% 
   separate(Area, into = c("Avg", "Area"), sep = "_") %>%  #fixes names from Ave_AreaA to AreaA
   select(Year, Area, Max_Count)
-#Min Burrows
+
+#Trends Analysis
+MaxBur_lm <- lm(Total_of_Avgs ~ Year, maxBurSummary)
+MaxBur_lm_summary <- summary(MaxBur_lm)
+
+##Min Burrows##
 minBurSummary <- BT_Surveys %>% 
   group_by(Year) %>% 
   summarize(Min_Burrows = min(TotBur, na.rm = T))
 
-#Avg Burrows
+##Avg Burrows##
 avgBurSummary <- BT_Surveys %>% 
   group_by(Year) %>% 
   summarize(Avg_Burrows = mean(TotBur, na.rm = T))
@@ -275,17 +280,18 @@ Beginning in 2022, we did more intensive monitoring of the primary cluster of ba
 ############################# All Years Plots ###################################
 
 #Max Burrows 
-ggplot(data = maxBurSummary, aes(x = Year, y = Max_Site_Total)) +
+MaxBurPlot <- ggplot(data = maxBurSummary, aes(x = Year, y = Total_of_Avgs)) +
   geom_line() +
   geom_point() +
   geom_smooth(method = lm) +
   labs(title = "Max Burrow Counts by Year",
      x = "Year",
-     y = "Max Burrow Count")
+     y = "Max Burrow Count")+
+  theme_minimal()
 
 
 #Min Burrows
-ggplot(data = minBurSummary, aes(x = Year, y = Min_Burrows)) +
+AvgBur_Plot <- ggplot(data = minBurSummary, aes(x = Year, y = Min_Burrows)) +
   geom_line() +
   geom_point() +
   geom_smooth(method = lm) +
@@ -294,7 +300,7 @@ ggplot(data = minBurSummary, aes(x = Year, y = Min_Burrows)) +
      y = "Min Burrow Count")
 
 #Avg Burrows
-ggplot(data = avgBurSummary, aes(x = Year, y = Avg_Burrows)) +
+AvgBur_Plot <- ggplot(data = avgBurSummary, aes(x = Year, y = Avg_Burrows)) +
   geom_line() +
   geom_point() +
   geom_smooth(method = lm) +
@@ -305,7 +311,7 @@ ggplot(data = avgBurSummary, aes(x = Year, y = Avg_Burrows)) +
 #Distribution of Max Burrow counts by Area over Time (Replacing Sparkeline)
 Burrow_Dist <- ggplot(maxBurSummary_long, aes(x = Year, y = Max_Count, fill = Area)) +
   geom_col() +
-  labs(title = "Distribution of Burrows by Area Over Time",
+  labs(title = "Distribution of Burrows across Areas by Year",
        x = "Year", y = "Max Counts", fill = "Area") +
   theme_minimal() 
 
@@ -314,19 +320,19 @@ BT_Surveys$Month <- as.factor(format(BT_Surveys$Date, "%m"))
 monthlyAvg <- BT_Surveys %>% 
   group_by(Month) %>% 
   summarize(MonthAvg_Bur = mean(TotBur))
-ggplot(monthlyAvg, aes(x = Month, y = MonthAvg_Bur))+
+BurCountByMonth_Plot <- ggplot(monthlyAvg, aes(x = Month, y = MonthAvg_Bur))+
   geom_col()+
   labs(title = "Average Burrows Count by Month ", x = "Month", y = "Burrows")
   
 ############################## Current Year Plots ##############################
 
 #Annual Avg Burrows by sector
-ggplot(AvgBurByArea_long, aes(x = Area, y = AvgBurs)) +
+currentYrBySector_Plot <- ggplot(AvgBurByArea_long, aes(x = Area, y = AvgBurs)) +
   geom_col() +
   labs(title = paste(TargetYr," Average Burrows by Sector"), x = "Area", y = "Annual Average Burrows")
 
 #Burrow counts over the Target Year
-ggplot(currentYr_BT, aes(x = Date, y = TotBur)) +
+currentYrByMonth_Plot <- ggplot(currentYr_BT, aes(x = Date, y = TotBur)) +
   geom_line() +
   geom_point() +
   scale_y_continuous(limits = c(0, maxBur + 10)) +
@@ -365,3 +371,9 @@ National Park Service 2022. Bank swallow monitoring protocol for the Golden Gate
 Zeiner, D.C., W.F. Laudenslayer, Jr., K.E. Mayer, and M. White, eds. 1988-1990. California's
 
 Wildlife. Vol. I-III. California Depart. of Fish and Game, Sacramento, California.
+
+
+
+# Potential Plots of Interest
+
+
