@@ -1,0 +1,478 @@
+---
+title: "`r paste(params$year, 'Bank Swallow Monitoring Report for the Fort Funston Population at Golden Gate National Recreation Area')`"
+author: "Aiko Goldson, Daniel Solorzano and Bill Merkle"
+date: "`r format(Sys.time(), '%B %Y')`"
+output:
+  word_document: 
+    reference_docx: NPS_Style.docx
+    fig_caption: yes
+params:
+  year: 2024
+  data_path: "C:/Users/solor/Documents/Work/GOGA Internship/BANS/Data/"
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = FALSE, warning = FALSE, message = FALSE, fig.width = 7, fig.height = 5)
+
+##########################################################################
+## Project: Bank Swallow Annual Data Summary Report
+## Purpose: Auto-generate comprehensive annual monitoring reports
+## Date: Last updated `r format(Sys.Date(), '%m/%d/%y')`
+## Author: Daniel Solorzano-Jones (Enhanced Template)
+## R version: 4.x+
+##########################################################################
+
+#rm(list = ls())
+
+#------------------------ Libraries -------------------------------------#
+library(gridExtra)   # for making grids of plots
+library(dplyr)       # for data manipulation
+library(tidyr)       # for pivoting data
+library(readxl)      # for reading excel files
+library(english)     # for translating integers to words
+library(ggplot2)     # for making plots
+library(ggthemes)    # for plot themes
+library(flextable)   # for making tables in Word
+library(stringr)     # for string manipulation
+library(lubridate)   # for date handling
+library(knitr)       # for kable tables
+#------------------------------------------------------------------------#
+
+#------------------------ Directories------------------------------------#
+if (!dir.exists("Plots/All_Years")) dir.create("Plots/All_Years", recursive = TRUE)
+if (!dir.exists("Plots/Current_Year")) dir.create("Plots/Current_Year", recursive = TRUE)
+
+#------------------------------------------------------------------------#
+
+#------------------------ Variables -------------------------------------#
+# Year of data to analyze (can be set via params or manually)
+TargetYr <- as.character(params$year)
+previousYr <- as.numeric(TargetYr) - 1
+
+# Data file paths - reads from Access database exports
+data_path <- params$data_path
+
+# Read in data files
+AnnSum <- read_xlsx(paste0(data_path, "qry_AnnualSummaries_Final.xlsx"))
+MaxNestlings <- read_xlsx(paste0(data_path, "qryBurrowMaxNestlings.xlsx"))
+ActiveBANS <- read_xlsx(paste0(data_path, "qry_BurrowSurveySummary.xlsx"))
+BT_Surveys <- read_xlsx(paste0(data_path, "qry_MaxNumBurrows_Step2.xlsx"))
+
+# Optional: Drilled burrows data (if available)
+# DrilledBurrows <- read_xlsx(paste0(data_path, "qry_DrilledBurrows.xlsx"))
+#------------------------------------------------------------------------#
+```
+
+```{r data_prep, include=FALSE}
+##########################################################################
+######################### DATA PREPARATION ###############################
+##########################################################################
+
+#------------------------ Clean and Format Data -------------------------#
+
+# Remove Natural Max columns if present
+AnnSum <- select(AnnSum, -contains("Nat"))
+
+# Format dates
+BT_Surveys$Date <- as.Date(BT_Surveys$Date)
+
+# Create total burrows column
+BT_Surveys <- BT_Surveys %>% 
+  mutate(TotBur = rowSums(select(., contains("area")), na.rm = TRUE))
+
+# Subset to report year and prior
+AnnSum <- subset(AnnSum, SurveyYear <= TargetYr)
+#------------------------------------------------------------------------#
+
+##########################################################################
+####################### ALL YEARS STATISTICS #############################
+##########################################################################
+
+#------------------------ Burrow Transect Summaries ---------------------#
+
+# Maximum burrows by area per year
+maxBurSummary <- BT_Surveys %>% 
+  group_by(Year) %>% 
+  summarise(
+    across(starts_with("Av"), max, na.rm = TRUE),
+    Total_of_Avgs = max(TotBur, na.rm = TRUE))
+
+# Long format for plotting
+maxBurSummary_long <- maxBurSummary %>% 
+  pivot_longer(cols = starts_with("Av"),
+               names_to = "Area",
+               values_to = "Max_Count") %>% 
+  separate(Area, into = c("Avg", "Area"), sep = "_") %>%
+  select(Year, Area, Max_Count)
+
+# Regression analysis for trends
+MaxBur_lm <- lm(Total_of_Avgs ~ Year, data = maxBurSummary)
+MaxBur_lm_summary <- summary(MaxBur_lm)
+
+# Extract regression parameters for text
+slope <- round(coef(MaxBur_lm)[2], 2)
+r_squared <- round(MaxBur_lm_summary$r.squared, 3)
+equation <- paste0("y = ", round(coef(MaxBur_lm)[2], 4), "x + ", 
+                   round(coef(MaxBur_lm)[1], 2))
+
+# Minimum and average burrow summaries
+minBurSummary <- BT_Surveys %>% 
+  group_by(Year) %>% 
+  summarize(Min_Burrows = min(TotBur, na.rm = TRUE))
+
+avgBurSummary <- BT_Surveys %>% 
+  group_by(Year) %>% 
+  summarize(Avg_Burrows = mean(TotBur, na.rm = TRUE))
+
+# Historical comparison (1993-1996 data if available)
+historical_min <- 561  # From NPS 2007 report
+historical_max <- 924  # From NPS 2007 report
+#------------------------------------------------------------------------#
+
+##########################################################################
+###################### CURRENT YEAR STATISTICS ###########################
+##########################################################################
+
+#------------------------ Burrow Transect Data --------------------------#
+
+# Basic survey information
+startBT <- AnnSum[AnnSum$SurveyYear == TargetYr, "FirstSurvey"]
+startBT <- format(startBT[[1]], "%m/%d/%Y")
+
+endBT <- AnnSum[AnnSum$SurveyYear == TargetYr, "LastSurvey"]
+endBT <- format(endBT[[1]], "%m/%d/%Y")
+
+numBT_Surveys <- AnnSum[AnnSum$SurveyYear == TargetYr, "NumSurveys"]
+numBT_Surveys <- numBT_Surveys[[1]]
+
+# Filter current year data
+currentYr_BT <- subset(BT_Surveys, format(Date, "%Y") == TargetYr)
+
+# Maximum burrow count and location
+maxBur <- max(currentYr_BT$TotBur, na.rm = TRUE)
+
+# Find area with highest burrow count
+area_cols <- grep("Av", names(currentYr_BT), value = TRUE)
+max_by_area <- currentYr_BT %>%
+  summarise(across(all_of(area_cols), max, na.rm = TRUE)) %>%
+  pivot_longer(everything(), names_to = "Area", values_to = "Count") %>%
+  mutate(Area = gsub("Av_", "", Area)) %>%
+  arrange(desc(Count))
+
+HighestMaxBurs_Area <- max_by_area$Area[1]
+HighestMaxBurs_Count <- max_by_area$Count[1]
+
+# Average burrows by area
+AvgBurByArea <- currentYr_BT %>%
+  summarise(across(all_of(area_cols), mean, na.rm = TRUE))
+
+AvgBurByArea_long <- AvgBurByArea %>%
+  pivot_longer(everything(), names_to = "Area", values_to = "AvgBurs") %>%
+  mutate(Area = gsub("Av_", "", Area))
+#------------------------------------------------------------------------#
+
+#------------------------ Burrow Activity Data --------------------------#
+
+# Burrow activity survey dates and counts
+if(nrow(ActiveBANS) > 0 && any(ActiveBANS$SurveyYear == TargetYr)) {
+  
+  ActiveBANS_currentYr <- subset(ActiveBANS, SurveyYear == TargetYr)
+  
+  startBA <- min(ActiveBANS_currentYr$Date, na.rm = TRUE)
+  startBA <- format(startBA, "%m/%d/%Y")
+  
+  endBA <- max(ActiveBANS_currentYr$Date, na.rm = TRUE)
+  endBA <- format(endBA, "%m/%d/%Y")
+  
+  numBA_Surveys <- length(unique(ActiveBANS_currentYr$Date))
+  
+  # Active burrow statistics
+  total_burrows_monitored <- length(unique(ActiveBANS_currentYr$BurrowID))
+  active_burrows <- sum(ActiveBANS_currentYr$Active == "Y", na.rm = TRUE)
+  percent_active <- round(active_burrows / total_burrows_monitored * 100, 0)
+  
+  # Nestling counts
+  burrows_with_nestlings <- sum(ActiveBANS_currentYr$MaxNestlings > 0, na.rm = TRUE)
+  total_nestlings <- sum(ActiveBANS_currentYr$MaxNestlings, na.rm = TRUE)
+  
+} else {
+  # Set defaults if no data
+  startBA <- "N/A"
+  endBA <- "N/A"
+  numBA_Surveys <- 0
+  total_burrows_monitored <- 0
+  active_burrows <- 0
+  percent_active <- 0
+  burrows_with_nestlings <- 0
+  total_nestlings <- 0
+}
+#------------------------------------------------------------------------#
+
+#------------------------ Drilled Burrows (if applicable) ---------------#
+
+# Set these manually or from data if drilled burrows were used this year
+drilled_burrows_used <- FALSE  # Change to TRUE if drilled burrows were created
+num_drilled_burrows <- 0
+drilled_burrow_locations <- 0
+drilled_burrows_occupied <- 0
+
+# If you have drilled burrow data:
+# drilled_burrows_used <- TRUE
+# num_drilled_burrows <- 50
+# drilled_burrow_locations <- 6
+# drilled_burrows_occupied <- 1
+#------------------------------------------------------------------------#
+```
+
+```{r helper_functions, include=FALSE}
+##########################################################################
+######################### HELPER FUNCTIONS ###############################
+##########################################################################
+
+# Function to convert numbers to words
+num_to_word <- function(num) {
+  if(num <= 20) {
+    return(as.character(english::english(num)))
+  } else {
+    return(as.character(num))
+  }
+}
+
+# Function to determine if text about special activities should be included
+include_special_activities <- function(year) {
+  # Years where special activities (drilling, ice plant removal) occurred
+  special_activity_years <- c(2023, 2024)  # Update as needed
+  return(year %in% special_activity_years)
+}
+
+# Function to create area name mapping
+area_name_map <- function(area_code) {
+  mapping <- c(
+    "AreaA" = "Area A",
+    "AreaB" = "Area B (Revetment)",
+    "AreaPB" = "Phillip Burton Memorial Beach",
+    "Area1" = "Area 1",
+    "Area2" = "Area 2",
+    "Area3" = "Area 3"
+  )
+  return(ifelse(area_code %in% names(mapping), mapping[area_code], area_code))
+}
+```
+
+# Abstract
+
+The Fort Funston breeding colony of bank swallows has been observed since the early 1900's. Habitat loss and other factors led to bank swallows being listed as a threatened species under the California Endangered Species Act. The Fort Funston breeding colony of bank swallows may be one of only two remaining coastal breeding sites in California. The bank swallow colony has shifted locations along the bluffs at Fort Funston over the years, with bank swallows mainly nesting at `r area_name_map(HighestMaxBurs_Area)` in `r TargetYr`. The total number of bank swallow burrows at the Fort Funston colony has been declining since 2000. In `r TargetYr`, there were `r HighestMaxBurs_Count` bank swallow burrows counted at `r area_name_map(HighestMaxBurs_Area)``r if(active_burrows > 0) paste0(". ", num_to_word(active_burrows), " burrows were determined to be active")``r if(burrows_with_nestlings > 0) paste0(", with ", burrows_with_nestlings, " burrows containing a total of ", total_nestlings, " nestlings")`
+
+`r if(drilled_burrows_used) paste0("In addition to monitoring in ", TargetYr, ", we tested drilling burrows, removing ice plant from accessible sections of bluff face, and placed temporary signage to try to keep people from disturbing active nesting areas.")`
+
+# Introduction
+
+The bank swallow (_Riparia riparia_) was listed as a threatened species under the California Endangered Species Act in 1989, after the species was extirpated from southern California and much of central California. The bank swallow range in California may have been reduced by as much as 50% (Zeiner et al. 1988). Habitat loss at breeding colony sites may continue to impact the species throughout the state. Fort Funston and Ano Nuevo State Park 65 km to the south are likely the only two extant coastal bank swallow breeding colonies remaining in California. Bank swallows have been known to nest in the bluffs at Fort Funston since at least the early 1900's (Laymon et al. 1987).
+
+The National Park Service began systematically monitoring breeding bank swallows at Fort Funston each spring, beginning in 2000 (Figure 1). The monitoring program was designed to determine trends within the local breeding population, and to record potential disturbances to bank swallows and their nesting areas. Following severe bluff erosion in 2010, the San Francisco Public Utilities Commission installed a rock revetment north of Funston Beach (Figure 1, Area B encompasses the suitable breeding habitat in the exposed bluff face above the rock revetment). From 2011-2019, most bank swallow burrows occurred in Area B in the bluff face above the revetment. In 2019, active burrows were discovered approximately two km south (outside the NPS boundary), along the bluffs of Phillip Burton Memorial Beach (Figures 1 and 2, Area PB), and this area was added to our monitoring program.
+
+`r if(include_special_activities(as.numeric(TargetYr))) paste0("In ", TargetYr, ", we added, or continued, several elements to our regular burrow monitoring program, including monitoring burrows for nesting activity (started in 2022), drilling artificial burrows, removing accessible ice plant (Carpobrotus edulis) from suitable nesting bluff faces, and the installation of signage to protect active nesting areas. To see if bank swallows could be attracted to nest, we pilot tested drilling burrows prior to the arrival of bank swallows at the site. Before drilling, a geologic consultant assessed the bluffs for suitable drilling sites (Kleinfelder 2023). Overhanging ice plant was also removed to clear sections of bluff face for nesting opportunities.")`
+
+![**Figure 1:** Map of Fort Funston bank swallow monitoring locations. Text between Monitoring Boundary Sectors indicates the monitoring area name.](Images/FOFU_Map.png){width=100%}
+
+# Objectives
+
+The specific objectives of the bank swallow monitoring program are:
+
+* To determine trends in the bank swallow population by tracking the total number of burrows as an index of the population.
+* To monitor the spatial location of bank swallow burrows.
+* To track the phenology of bank swallow arrival and nesting at the site.
+* To collect information on bank swallow burrow use and nesting in primary nesting burrow clusters.
+* To record data on various disturbances and potential disturbance factors.
+* To utilize monitoring data to improve habitat protections and restoration and outreach for the Fort Funston bank swallow colony.
+
+# Methods
+
+## Burrow Transects
+
+The Fort Funston bank swallow colony has been monitored using largely the same methods since 2000 (NPS 2022). Monitoring sectors were added to the surveys as bank swallow nesting locations shifted. Areas A and B were added to the initial survey area in 2010, and Area PB was added in 2019 (Figures 1 and 2). Surveys involve trained staff walking a transect beginning north of the rock revetment area at south Ocean Beach, parallel to the Great Highway Extension (Figure 1). Surveyors continue walking south to Phillip Burton Memorial Beach. Observers identify and record all bird species encountered, including bank swallows, and note the type of bank swallow activity observed. They count and record the number of bank swallow burrows within each area. The number of burrows is counted twice by each observer, once while walking south, and again on the return north to Ocean Beach. Observers also record potential disturbances to bank swallows, including humans climbing on cliffs, off-leash dogs, low-flying aircraft, etc. Surveys occur every 7-10 days throughout the nesting period, from mid-April through July or early August. Monitors try to conduct one survey right before the bank swallows have arrived (they are long distance Neo-tropical migrants that overwinter in South America) to determine how many burrows have persisted from previous years.
+
+## Burrow Nesting Monitoring Surveys
+
+Beginning in 2022, we did more intensive monitoring of the primary cluster of bank swallow nesting burrows to determine use. In `r TargetYr`, we continued nest monitoring surveys. These surveys focused on the areas with the most burrows and activity. Early season burrow transect surveys provide an indication of where to focus nest monitoring surveys. Once an area was selected, photos were taken of the area and then printed and laminated. These photos were used as a map to keep track of burrow identification. Surveys involved trained staff sitting in front of the focal burrow areas for one hour and recording bank swallow activity at a particular burrow and the time. Bank swallow activities are described as flying in/out of burrows, carrying fecal sacs, carrying food, carrying nesting material, and whether and how many nestlings are observed. Nest monitoring surveys occurred every 7-10 days during the nesting period and sometimes were done following burrow transect surveys. Surveys continued throughout the nesting period until no activity at the burrows was observed. Well after bank swallows had left Fort Funston, we used a borescope to examine accessible burrows in the area that we monitored for burrow nesting activity.
+
+`r if(drilled_burrows_used) paste0("## Drilling Burrows\n\nWe worked with a geologist to identify locations along the bluffs at Fort Funston that matched previous bank swallow nesting locations with vertical bluff faces, above two meters in height, and with relatively soft substrates, and to provide design recommendations for burrow clustering to minimize potential destabilization of the bluff. Prior to the mid-April arrival of bank swallows, we established ", num_drilled_burrows, " total burrows with a depth of about two feet at ", drilled_burrow_locations, " locations along the bluffs, including adjacent to recent nesting burrows in the primary nesting area. Burrows were drilled using a gas-powered drill with a 3\" auger that was 23\" in length.")`
+
+```{r create_plots, include=FALSE, fig.width=7, fig.height=5}
+##########################################################################
+############################ CREATE PLOTS ################################
+##########################################################################
+
+#------------------------ All Years Plots -------------------------------#
+
+# Maximum burrow counts over time
+MaxBurPlot <- ggplot(data = maxBurSummary, aes(x = Year, y = Total_of_Avgs)) +
+  geom_line(color = "steelblue", size = 1) +
+  geom_point(size = 2, color = "steelblue") +
+  geom_smooth(method = "lm", se = TRUE, color = "darkred", linetype = "dashed") +
+  labs(title = "Total Maximum Bank Swallow Burrow Counts by Survey Year",
+       x = "Year",
+       y = "Maximum Burrow Count") +
+  theme_minimal() +
+  theme(plot.title = element_text(size = 12, face = "bold"),
+        axis.title = element_text(size = 10))
+
+# Distribution of burrows across areas
+BurrowDist_Plot <- ggplot(maxBurSummary_long, aes(x = Year, y = Max_Count, fill = Area)) +
+  geom_col(position = "stack") +
+  labs(title = "Distribution of Maximum Burrows Across Areas by Year",
+       x = "Year", 
+       y = "Maximum Burrow Count", 
+       fill = "Monitoring Area") +
+  theme_minimal() +
+  theme(plot.title = element_text(size = 12, face = "bold"),
+        axis.title = element_text(size = 10),
+        legend.position = "bottom")
+
+# Save plots
+ggsave("Plots/All_Years/MaxBurrowCountsbyYear.png", MaxBurPlot, 
+       width = 7, height = 5, dpi = 300)
+ggsave("Plots/All_Years/Burrows_Distribution.png", BurrowDist_Plot, 
+       width = 7, height = 5, dpi = 300)
+
+#------------------------ Current Year Plots ----------------------------#
+
+# Burrow counts over the season
+currentYr_TimeSeries <- ggplot(currentYr_BT, aes(x = Date, y = TotBur)) +
+  geom_line(color = "steelblue", size = 1) +
+  geom_point(size = 2.5, color = "steelblue") +
+  scale_y_continuous(limits = c(0, maxBur + 10)) +
+  labs(title = paste(TargetYr, "Burrow Counts Over the Monitoring Season"),
+       x = "Date", 
+       y = "Total Burrow Count") +
+  theme_minimal() +
+  theme(plot.title = element_text(size = 12, face = "bold"),
+        axis.title = element_text(size = 10))
+
+# Average burrows by sector
+currentYr_BySector <- ggplot(AvgBurByArea_long, aes(x = Area, y = AvgBurs, fill = Area)) +
+  geom_col(show.legend = FALSE) +
+  labs(title = paste(TargetYr, "Average Burrows by Monitoring Area"),
+       x = "Monitoring Area", 
+       y = "Average Burrow Count") +
+  theme_minimal() +
+  theme(plot.title = element_text(size = 12, face = "bold"),
+        axis.title = element_text(size = 10),
+        axis.text.x = element_text(angle = 45, hjust = 1))
+
+# Save current year plots
+ggsave("Plots/Current_Year/Burrows_TimeSeries.png", currentYr_TimeSeries,
+       width = 7, height = 5, dpi = 300)
+ggsave("Plots/Current_Year/Burrows_BySector.png", currentYr_BySector,
+       width = 7, height = 5, dpi = 300)
+```
+
+```{r create_tables, include=FALSE}
+##########################################################################
+########################### CREATE TABLES ################################
+##########################################################################
+
+# Summary table of current year surveys
+survey_summary <- data.frame(
+  Metric = c("Number of Burrow Transect Surveys",
+             "First Survey Date",
+             "Last Survey Date",
+             "Maximum Burrow Count",
+             "Primary Nesting Area",
+             "Number of Burrow Activity Surveys",
+             "Active Burrows Monitored",
+             "Burrows with Nestlings",
+             "Total Nestlings Observed"),
+  Value = c(numBT_Surveys,
+            startBT,
+            endBT,
+            maxBur,
+            area_name_map(HighestMaxBurs_Area),
+            ifelse(numBA_Surveys > 0, numBA_Surveys, "Not Conducted"),
+            ifelse(active_burrows > 0, active_burrows, "N/A"),
+            ifelse(burrows_with_nestlings > 0, burrows_with_nestlings, "N/A"),
+            ifelse(total_nestlings > 0, total_nestlings, "N/A"))
+)
+
+# Create flextable
+survey_summary_ft <- flextable(survey_summary) %>%
+  set_header_labels(Metric = "Survey Metric", Value = "Value") %>%
+  autofit() %>%
+  theme_vanilla()
+```
+
+# Results
+
+## Burrow Transects
+
+`r num_to_word(numBT_Surveys)` bank swallow transect surveys were conducted between `r startBT` and `r endBT`, each lasting approximately 1.5 hours in duration (Table 1). The `r area_name_map(HighestMaxBurs_Area)` was the primary nesting area in `r TargetYr`, with a maximum count of `r HighestMaxBurs_Count` burrows`r if(drilled_burrows_used) paste0(" (this count includes ", num_drilled_burrows, " drilled burrows)")`.
+
+Maximum counts of bank swallow burrows and locations have varied over time, though the total maximum number of burrows has declined over the monitoring period (Figure `r ifelse(drilled_burrows_used, 3, 2)`). A linear regression line for total bank swallow burrows over time demonstrates this declining trend in bank swallow burrows (R² = `r r_squared`, slope = `r slope` burrows/year). NPS bank swallow monitoring from 1993-1996 showed between `r historical_min` and `r historical_max` total burrows, indicating an even larger decline since that time (NPS 2007).
+
+Bank swallow nesting locations have shifted along the bluffs at Fort Funston over time (Figure `r ifelse(drilled_burrows_used, 4, 3)`). `r if(HighestMaxBurs_Area == "AreaPB") paste0("Since 2020, bank swallow nesting has occurred primarily at the Phillip Burton Memorial Beach area.")`
+
+```{r display_table1, echo=FALSE}
+# Display survey summary table
+kable(survey_summary, 
+      caption = "Table 1. Summary of bank swallow monitoring surveys conducted in [YEAR]",
+      col.names = c("Survey Metric", "Value"))
+```
+
+## Burrow Nesting Monitoring Surveys
+
+`r if(numBA_Surveys > 0) paste0(num_to_word(numBA_Surveys), " nest monitoring surveys were conducted between ", startBA, " and ", endBA, ", each approximately one hour in duration. We focused our efforts on the ", area_name_map(HighestMaxBurs_Area), " as most activity was observed here during the transect surveys. ", active_burrows, " burrows were determined to be active out of the maximum count of ", total_burrows_monitored, " burrows (", percent_active, "%) for this area. We observed ", burrows_with_nestlings, " active nest burrows with nestlings, which had a total of ", total_nestlings, " nestlings.") else "Detailed burrow nesting monitoring surveys were not conducted this year."`
+
+`r if(drilled_burrows_used) paste0("Out of the ", num_drilled_burrows, " drilled burrows, only ", drilled_burrows_occupied, " showed bank swallow activity. Nestlings were not observed in the drilled burrow(s) that showed activity.\n\nTo further investigate nesting in the bank swallow colony, we used a borescope to examine accessible burrows in the primary nesting area. [ADD SPECIFIC BORESCOPE FINDINGS]")`
+
+![**Figure `r ifelse(drilled_burrows_used, 3, 2)`:** Total maximum bank swallow burrow counts by year. Regression line shows declining trend. `r if(drilled_burrows_used) "Drilled burrows are not included in count data."`](Plots/All_Years/MaxBurrowCountsbyYear.png){width=100%}
+
+![**Figure `r ifelse(drilled_burrows_used, 4, 3)`:** Spatial distribution of maximum burrow counts across sampling areas by year.](Plots/All_Years/Burrows_Distribution.png){width=100%}
+
+![**Figure `r ifelse(drilled_burrows_used, 5, 4)`:** `r TargetYr` burrow counts over the monitoring season.](Plots/Current_Year/Burrows_TimeSeries.png){width=100%}
+
+# Discussion
+
+Only two coastal breeding sites for bank swallows remain in California, making the Fort Funston population of high conservation importance. Our monitoring data going back to 2000 indicate that the Fort Funston bank swallow population is likely in severe decline (Figure `r ifelse(drilled_burrows_used, 3, 2)`). Loss of the Fort Funston bank swallow population would set back bank swallow recovery in the state and reduce local biodiversity. Bank swallows have been known to nest along the Fort Funston bluffs since the early 1900's.
+
+**[YEAR-SPECIFIC DISCUSSION POINTS - UPDATE MANUALLY]**
+
+<!-- Template for discussion points:
+* Trends in burrow counts compared to previous years
+* Observations about nesting success
+* Notable disturbances or environmental events
+* Effectiveness of management interventions
+* Recommendations for future monitoring
+-->
+
+`r if(drilled_burrows_used) paste0("We tested drilling ", num_drilled_burrows, " burrows in ", drilled_burrow_locations, " locations along the bluffs at Fort Funston. Bank swallow activity was only observed in ", drilled_burrows_occupied, " of the drilled burrows. Bank swallows do reuse some burrows from previous years when they persist. Bank swallows did not preferentially choose the drilled burrows over other remaining burrows, or digging new burrows, in ", TargetYr, " and were not attracted to move to other locations where we had drilled burrows. [ADD DISCUSSION ABOUT FUTURE PLANS FOR DRILLED BURROWS]")`
+
+The National Park Service (NPS) preserves and protects all native and sensitive wildlife, as well as migratory species. NPS management policies dictate that we protect state-listed wildlife as we would federally-listed species to the extent feasible (i.e., protect sensitive species and the habitat they depend on). To this end, we will continue to monitor bank swallows to detect trends in relative abundance and nesting locations, contribute to this long-term data set, and inform management for this state-threatened species and its limited nesting habitat. Management actions to protect bank swallow nesting include fencing, signage, habitat restoration and ice plant removal, and public outreach/education.
+
+# Literature Cited
+
+Laymon, S.A., B.A. Garrison, and J.M. Humphrey. 1987. Historic and current status of the bank swallow in California. Report to the State of California Department of Fish and Game, Admin Report 88-2.
+
+Kleinfelder. 2023. Geologic Consultation for the Bank Swallow Bluff Burrow Project in the Fort Funston Area. Technical memorandum to NPS. 14 pp.
+
+National Park Service. 2007. Bank swallow monitoring at Fort Funston, Golden Gate National Recreation Area 1993-2006. NPS internal report.
+
+National Park Service. 2022. Bank swallow monitoring protocol for the Golden Gate National Recreation Area. 17 pp.
+
+Zeiner, D.C., W.F. Laudenslayer, Jr., K.E. Mayer, and M. White, eds. 1988-1990. California's Wildlife. Vol. I-III. California Department of Fish and Game, Sacramento, California.
+
+---
+
+# Appendix: Additional Figures and Notes
+
+<!-- This section can include additional plots or analyses -->
+
+![](Plots/Current_Year/Burrows_BySector.png){width=100%}
+
+**Notes for Future Reports:**
+
+* Update `params$year` in YAML header or set `TargetYr` variable
+* Update data file paths in `params$data_path`
+* Add year-specific discussion points in Discussion section
+* Update drilled burrow parameters if applicable
+* Ensure all image files exist in specified directories
+* Review and update borescope findings if conducted
